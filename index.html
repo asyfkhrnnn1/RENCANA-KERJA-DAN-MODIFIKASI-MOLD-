@@ -83,7 +83,7 @@
         <h1 class="font-bold text-sm sm:text-lg leading-tight truncate">Workshop Tooling Hub</h1>
         <p class="text-xs sm:text-sm text-slate-400 flex items-center gap-1.5 mt-0.5">
           <span class="truncate">Modifikasi Mold</span>
-          <span id="syncStatus" class="text-emerald-400 font-semibold">• Tersimpan di Cloud</span>
+          <span id="syncStatus" class="text-emerald-400 font-semibold">• Menghubungkan...</span>
         </p>
       </div>
     </div>
@@ -316,7 +316,7 @@
   </div>
 
   <script>
-    // URL Endpoint API Vercel (Menggunakan relative path /api/mold)
+    // Konfigurasi endpoint: jika domain Vercel diketahui, bisa ditulis lengkap atau gunakan relative
     const API_URL = '/api/mold';
     const STORAGE_KEY_CHECKPOINTS = 'modifikasi_mold_checkpoints';
     const STORAGE_KEY_INFO = 'modifikasi_mold_info';
@@ -350,18 +350,18 @@
       }
     }
 
-    // Mengambil data dari Cloud (Database Aiven via Vercel API)
+    // Mengambil data dari Cloud MySQL via Vercel API
     async function loadCloudData() {
       setSyncStatus('Memuat data cloud...', 'text-amber-400');
       try {
         const res = await fetch(API_URL);
         if (res.ok) {
           const data = await res.json();
-          if (data) {
-            if (data.mold_name !== undefined) document.getElementById('moldName').value = data.mold_name || '';
-            if (data.job_desc !== undefined) document.getElementById('moldJob').value = data.job_desc || '';
-            if (data.start_date !== undefined) document.getElementById('moldStartDate').value = data.start_date || '';
-            if (data.end_date !== undefined) document.getElementById('moldEndDate').value = data.end_date || '';
+          if (data && (data.mold_name || data.checkpoints)) {
+            document.getElementById('moldName').value = data.mold_name || '';
+            document.getElementById('moldJob').value = data.job_desc || '';
+            document.getElementById('moldStartDate').value = data.start_date || '';
+            document.getElementById('moldEndDate').value = data.end_date || '';
 
             if (data.checkpoints) {
               checkpoints = typeof data.checkpoints === 'string' ? JSON.parse(data.checkpoints) : data.checkpoints;
@@ -370,21 +370,23 @@
             setSyncStatus('Tersambung ke Cloud', 'text-emerald-400');
             renderAll();
             return;
+          } else {
+            setSyncStatus('Database Kosong', 'text-slate-400');
           }
+        } else {
+          setSyncStatus(`Gagal Cloud (${res.status})`, 'text-rose-400');
         }
       } catch (err) {
-        console.warn("Gagal memuat dari API Cloud, beralih ke cache lokal:", err);
+        console.warn("Gagal memanggil API Cloud, membaca penyimpanan lokal:", err);
+        setSyncStatus('Mode Lokal (Offline)', 'text-amber-400');
       }
 
-      // Fallback lokal jika jaringan offline / API belum siap
       loadSavedLocalInfo();
-      setSyncStatus('Mode Lokal / Offline', 'text-slate-400');
       renderAll();
     }
 
     // Menyimpan data ke Cloud dan LocalStorage
     async function saveAllData() {
-      // 1. Simpan ke LocalStorage segera
       localStorage.setItem(STORAGE_KEY_CHECKPOINTS, JSON.stringify(checkpoints));
       const info = {
         moldName: document.getElementById('moldName').value,
@@ -394,7 +396,6 @@
       };
       localStorage.setItem(STORAGE_KEY_INFO, JSON.stringify(info));
 
-      // 2. Debounce push ke API Vercel/MySQL
       setSyncStatus('Menyimpan...', 'text-amber-400');
       clearTimeout(saveTimeout);
       saveTimeout = setTimeout(async () => {
@@ -416,13 +417,15 @@
           if (res.ok) {
             setSyncStatus('Tersimpan di Cloud', 'text-emerald-400');
           } else {
-            setSyncStatus('Tersimpan di Lokal', 'text-amber-400');
+            const errData = await res.json().catch(() => ({}));
+            console.error("Respon API Error:", errData);
+            setSyncStatus('Gagal Simpan ke Cloud', 'text-rose-400');
           }
         } catch (err) {
           console.error("Gagal sinkronisasi ke server:", err);
-          setSyncStatus('Tersimpan di Lokal', 'text-amber-400');
+          setSyncStatus('Tersimpan di Lokal Saja', 'text-amber-400');
         }
-      }, 500);
+      }, 600);
     }
 
     function loadSavedLocalInfo() {
